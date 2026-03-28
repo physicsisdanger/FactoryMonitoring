@@ -15,14 +15,29 @@ const useMachineStore = create(
               name: 'Фрезерный станок CNC-01',
               status: 'running',
               temperature: 45,
-              position: { x: 0, y: 0, w: 1, h: 1 }
+              position: { x: 0, y: 0, w: 1, h: 1 },
+              photos: [],
+              history: [
+                {
+                  id: 'hist-1',
+                  date: new Date().toISOString(),
+                  oldStatus: 'ready',
+                  newStatus: 'running',
+                  comment: 'Запущен в работу',
+                  user: 'Оператор',
+                  photos: [],
+                  comments: []
+                }
+              ]
             },
             {
               id: '2',
               name: 'Токарный станок T-200',
-              status: 'idle',
+              status: 'ready',
               temperature: 28,
-              position: { x: 1, y: 0, w: 1, h: 1 }
+              position: { x: 1, y: 0, w: 1, h: 1 },
+              photos: [],
+              history: []
             }
           ]
         },
@@ -34,16 +49,20 @@ const useMachineStore = create(
             {
               id: '3',
               name: 'Сверлильный станок Drill-300',
-              status: 'idle',
+              status: 'waiting_qc',
               temperature: 22,
-              position: { x: 0, y: 0, w: 1, h: 1 }
+              position: { x: 0, y: 0, w: 1, h: 1 },
+              photos: [],
+              history: []
             },
             {
               id: '4',
               name: 'Шлифовальный станок Grind-500',
-              status: 'idle',
+              status: 'need_check',
               temperature: 35,
-              position: { x: 1, y: 0, w: 1, h: 1 }
+              position: { x: 1, y: 0, w: 1, h: 1 },
+              photos: [],
+              history: []
             }
           ]
         }
@@ -71,13 +90,15 @@ const useMachineStore = create(
         )
       })),
       
-      reorderZone: (zoneId, newOrder) => set((state) => {
+      reorderZone: (zoneId, targetOrder) => set((state) => {
         const zones = [...state.zones];
-        const zoneIndex = zones.findIndex(z => z.id === zoneId);
-        if (zoneIndex === -1) return state;
+        const sourceIndex = zones.findIndex(z => z.id === zoneId);
+        const targetIndex = zones.findIndex(z => z.order === targetOrder);
         
-        const [movedZone] = zones.splice(zoneIndex, 1);
-        zones.splice(newOrder, 0, movedZone);
+        if (sourceIndex === -1 || targetIndex === -1) return state;
+        
+        const [movedZone] = zones.splice(sourceIndex, 1);
+        zones.splice(targetIndex, 0, movedZone);
         
         const updatedZones = zones.map((zone, idx) => ({
           ...zone,
@@ -109,9 +130,20 @@ const useMachineStore = create(
         const newMachine = {
           id: Date.now().toString(),
           name: machineName,
-          status: 'idle',
+          status: 'ready',
           temperature: 20,
-          position: { x: newX, y: newY, w: 1, h: 1 }
+          position: { x: newX, y: newY, w: 1, h: 1 },
+          photos: [],
+          history: [{
+            id: Date.now().toString(),
+            date: new Date().toISOString(),
+            oldStatus: null,
+            newStatus: 'ready',
+            comment: 'Станок добавлен',
+            user: 'Система',
+            photos: [],
+            comments: []
+          }]
         };
         
         return {
@@ -131,15 +163,119 @@ const useMachineStore = create(
         )
       })),
       
-      updateMachineStatus: (zoneId, machineId, status) => set((state) => ({
+      renameMachine: (zoneId, machineId, newName) => set((state) => ({
         zones: state.zones.map(z =>
           z.id === zoneId 
             ? { ...z, machines: z.machines.map(m =>
-                m.id === machineId ? { ...m, status: status } : m
+                m.id === machineId 
+                  ? { ...m, name: newName }
+                  : m
               ) }
             : z
         )
       })),
+      
+      clearMachineHistory: (zoneId, machineId) => set((state) => ({
+        zones: state.zones.map(z =>
+          z.id === zoneId 
+            ? { ...z, machines: z.machines.map(m =>
+                m.id === machineId 
+                  ? { ...m, history: [] }
+                  : m
+              ) }
+            : z
+        )
+      })),
+      
+      addPhotoToMachine: (zoneId, machineId, photoData) => set((state) => ({
+        zones: state.zones.map(z =>
+          z.id === zoneId 
+            ? { ...z, machines: z.machines.map(m =>
+                m.id === machineId 
+                  ? { ...m, photos: [...(m.photos || []), photoData] }
+                  : m
+              ) }
+            : z
+        )
+      })),
+      
+      updateMachineStatus: (zoneId, machineId, status, comment = '', photos = []) => set((state) => {
+        const zone = state.zones.find(z => z.id === zoneId);
+        if (!zone) return state;
+        
+        const machine = zone.machines.find(m => m.id === machineId);
+        if (!machine) return state;
+        
+        const oldStatus = machine.status;
+        
+        const historyEntry = {
+          id: Date.now().toString(),
+          date: new Date().toISOString(),
+          oldStatus: oldStatus,
+          newStatus: status,
+          comment: comment || `Изменение статуса`,
+          user: 'Оператор',
+          photos: photos,
+          comments: []
+        };
+        
+        return {
+          zones: state.zones.map(z =>
+            z.id === zoneId 
+              ? { ...z, machines: z.machines.map(m =>
+                  m.id === machineId 
+                    ? { 
+                        ...m, 
+                        status: status,
+                        history: [historyEntry, ...(m.history || [])]
+                      } 
+                    : m
+                ) }
+              : z
+          )
+        };
+      }),
+      
+      addCommentToHistoryEntry: (zoneId, machineId, historyId, comment, photos) => set((state) => {
+        const zone = state.zones.find(z => z.id === zoneId);
+        if (!zone) return state;
+        
+        const machine = zone.machines.find(m => m.id === machineId);
+        if (!machine) return state;
+        
+        const historyEntry = machine.history.find(h => h.id === historyId);
+        if (!historyEntry) return state;
+        
+        const newComment = {
+          id: Date.now().toString(),
+          date: new Date().toISOString(),
+          text: comment,
+          photos: photos || [],
+          user: 'Оператор'
+        };
+        
+        return {
+          zones: state.zones.map(z =>
+            z.id === zoneId 
+              ? { ...z, machines: z.machines.map(m =>
+                  m.id === machineId 
+                    ? { 
+                        ...m, 
+                        history: m.history.map(h =>
+                          h.id === historyId 
+                            ? { 
+                                ...h, 
+                                comments: [...(h.comments || []), newComment]
+                              } 
+                            : h
+                        )
+                      } 
+                    : m
+                ) }
+              : z
+          )
+        };
+      }),
       
       moveMachineInZone: (zoneId, machineId, newX, newY) => set((state) => {
         const zone = state.zones.find(z => z.id === zoneId);

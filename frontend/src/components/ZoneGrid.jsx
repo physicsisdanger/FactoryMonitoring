@@ -32,8 +32,7 @@ const DraggableMachine = ({ machine, cellWidth, zoneId, onUpdateStatus, onDelete
       <MachineCard 
         machine={machine} 
         cellWidth={cellWidth}
-        updateStatus={onUpdateStatus}
-        deleteMachine={onDeleteMachine}
+        zoneId={zoneId}
       />
     </div>
   );
