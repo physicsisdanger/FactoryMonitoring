@@ -1,80 +1,120 @@
 .machine-card {
   background: white;
-  border-radius: 8px;
+  border-radius: 16px;
   overflow: hidden;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  transition: transform 0.2s;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border: 2px solid #e0e0e0;
+  cursor: grab;
+}
+
+.machine-card:active {
+  cursor: grabbing;
 }
 
 .machine-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+  border-color: #667eea;
 }
 
 .card-header {
   position: relative;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  padding: 20px;
+  padding: 24px 20px;
   text-align: center;
 }
 
 .machine-icon {
-  font-size: 48px;
-  margin: 10px 0;
+  font-size: 80px;
+  margin: 12px 0;
 }
 
 .status-indicator {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  padding: 4px 8px;
-  border-radius: 12px;
-  font-size: 10px;
+  top: 16px;
+  right: 16px;
+  padding: 8px 16px;
+  border-radius: 32px;
+  font-size: 14px;
   font-weight: bold;
   color: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .card-body {
-  padding: 12px;
+  padding: 20px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .machine-name {
-  margin: 0 0 8px 0;
-  font-size: 14px;
+  margin: 0;
+  font-size: 18px;
   font-weight: 600;
   color: #333;
+  word-break: break-word;
+  line-height: 1.3;
 }
 
 .machine-temp {
-  font-size: 12px;
+  font-size: 16px;
   color: #666;
-  margin-bottom: 10px;
+  font-weight: 500;
 }
 
 .status-select {
   width: 100%;
-  padding: 6px;
-  font-size: 11px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  margin-bottom: 8px;
+  padding: 12px;
+  font-size: 14px;
+  border: 2px solid #ddd;
+  border-radius: 12px;
   cursor: pointer;
+  background: white;
+  margin: 8px 0;
+  font-weight: 500;
+}
+
+.status-select:hover {
+  border-color: #667eea;
 }
 
 .delete-btn {
   width: 100%;
-  padding: 6px;
+  padding: 12px;
   background: #ffebee;
-  border: 1px solid #ffcdd2;
+  border: 2px solid #ffcdd2;
   color: #f44336;
-  border-radius: 4px;
-  font-size: 11px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .delete-btn:hover {
   background: #f44336;
   color: white;
   border-color: #f44336;
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(244, 67, 54, 0.3);
+}
+
+.delete-btn:active {
+  transform: scale(0.98);
+}
+
+.delete-btn::before {
+  content: "🗑️";
+  font-size: 16px;
 }
