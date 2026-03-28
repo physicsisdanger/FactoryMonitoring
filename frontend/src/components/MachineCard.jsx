@@ -4,6 +4,11 @@ const MachineCard = ({ machine, cellWidth = 140 }) => {
   const updateStatus = useMachineStore((state) => state.updateStatus);
   const deleteMachine = useMachineStore((state) => state.deleteMachine);
 
+  // Защита от undefined
+  if (!machine) {
+    return <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>⚠️ Ошибка</div>;
+  }
+
   const getStatusColor = (status) => {
     if (status === 'running') return '#22c55e';
     if (status === 'idle') return '#f59e0b';
@@ -17,14 +22,19 @@ const MachineCard = ({ machine, cellWidth = 140 }) => {
   };
 
   const getMachineIcon = (name) => {
-    if (name.toLowerCase().includes('фрезер')) return '⚙️';
-    if (name.toLowerCase().includes('токар')) return '🔧';
-    if (name.toLowerCase().includes('сверл')) return '🔨';
-    if (name.toLowerCase().includes('шлиф')) return '✨';
+    // Защита от undefined
+    if (!name) return '🏭';
+    
+    const lowerName = name.toLowerCase();
+    if (lowerName.includes('фрезер')) return '⚙️';
+    if (lowerName.includes('токар')) return '🔧';
+    if (lowerName.includes('сверл')) return '🔨';
+    if (lowerName.includes('шлиф')) return '✨';
     return '🏭';
   };
 
   const shortenName = (name) => {
+    if (!name) return 'Станок';
     const maxLen = Math.floor(cellWidth / 9);
     if (name.length > maxLen) {
       return name.slice(0, maxLen - 2) + '...';
@@ -116,7 +126,7 @@ const MachineCard = ({ machine, cellWidth = 140 }) => {
           wordBreak: 'break-word',
           lineHeight: 1.3,
           textAlign: 'center'
-        }} title={machine.name}>
+        }} title={machine.name || 'Станок'}>
           {shortenName(machine.name)}
         </div>
         <div style={{
@@ -125,12 +135,12 @@ const MachineCard = ({ machine, cellWidth = 140 }) => {
           fontWeight: 500,
           textAlign: 'center'
         }}>
-          🌡️ {machine.temperature}°C
+          🌡️ {machine.temperature || 20}°C
         </div>
         
         <select 
-          value={machine.status}
-          onChange={(e) => updateStatus(machine.id, e.target.value)}
+          value={machine.status || 'idle'}
+          onChange={(e) => updateStatus && updateStatus(machine.id, e.target.value)}
           onClick={(e) => e.stopPropagation()}
           style={{
             width: '100%',
@@ -159,8 +169,8 @@ const MachineCard = ({ machine, cellWidth = 140 }) => {
         <button 
           onClick={(e) => {
             e.stopPropagation();
-            if (window.confirm(`Удалить станок "${machine.name}"?`)) {
-              deleteMachine(machine.id);
+            if (window.confirm(`Удалить станок "${machine.name || 'Станок'}"?`)) {
+              deleteMachine && deleteMachine(machine.id);
             }
           }}
           style={{

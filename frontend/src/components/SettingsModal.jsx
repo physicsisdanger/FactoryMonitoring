@@ -20,13 +20,13 @@ const SettingsModal = ({ isOpen, onClose, cellWidth, onCellWidthChange }) => {
           <div className="settings-section">
             <label className="settings-label">
               <span className="settings-icon">📐</span>
-              Размер ячеек
+              Размер ячеек для всех зон
             </label>
             <div className="slider-container">
               <input
                 type="range"
                 min="100"
-                max="200"
+                max="220"
                 step="5"
                 value={cellWidth}
                 onChange={handleSliderChange}
@@ -37,7 +37,7 @@ const SettingsModal = ({ isOpen, onClose, cellWidth, onCellWidthChange }) => {
               </div>
             </div>
             <p className="settings-hint">
-              Перетащите ползунок для изменения размера ячеек.<br />
+              Перетащите ползунок для изменения размера ячеек во всех зонах.<br />
               Ячейки имеют формат 1:2 (ширина : высота)
             </p>
           </div>
@@ -50,6 +50,12 @@ const SettingsModal = ({ isOpen, onClose, cellWidth, onCellWidthChange }) => {
                 <span style={{ fontSize: Math.max(10, cellWidth / 10) }}>{cellWidth}×{cellHeight}</span>
               </div>
             </div>
+          </div>
+          
+          <div className="settings-info">
+            <p style={{ fontSize: '12px', color: '#64748b', marginTop: '16px' }}>
+              💡 Изменение размера применяется ко всем зонам одновременно.
+            </p>
           </div>
         </div>
         <div className="modal-footer">
@@ -166,6 +172,13 @@ const SettingsModal = ({ isOpen, onClose, cellWidth, onCellWidthChange }) => {
           gap: 4px;
           font-size: 20px;
           color: #3b82f6;
+        }
+        
+        .settings-info {
+          margin-top: 16px;
+          padding: 12px;
+          background: #f8fafc;
+          border-radius: 12px;
         }
       `}</style>
     </div>
