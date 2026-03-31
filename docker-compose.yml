@@ -1,0 +1,75 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: factory_postgres
+    environment:
+      POSTGRES_DB: factory_monitoring
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - factory_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: factory_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - factory_network
+
+  backend:
+    build: ./backend
+    container_name: factory_backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/factory_monitoring
+      REDIS_URL: redis://redis:6379
+      SECRET_KEY: your-secret-key-change-in-production-please-change-this
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - ./backend:/app
+      - uploads_data:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - factory_network
+
+  frontend:
+    build: ./frontend
+    container_name: factory_frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      VITE_API_URL: http://localhost:8000
+      VITE_WS_URL: ws://localhost:8000
+    depends_on:
+      - backend
+    networks:
+      - factory_network
+
+volumes:
+  postgres_data:
+  redis_data:
+  uploads_data:
+
+networks:
+  factory_network:
+    driver: bridge

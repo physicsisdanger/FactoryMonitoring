@@ -1,23 +1,59 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import useMachineStore from './store/machineStore';
+import useAuthStore from './store/authStore';
 import ZoneCard from './components/ZoneCard';
 import SettingsModal from './components/SettingsModal';
+import AuthModal from './components/AuthModal';
+import { USE_API } from './config';
 import './App.css';
 
 function App() {
   const [showAddZone, setShowAddZone] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
   const [newZoneName, setNewZoneName] = useState('');
   const [cellWidth, setCellWidth] = useState(140);
   
+  const { user, isAuthenticated, logout } = useAuthStore();
   const zones = useMachineStore((state) => state.zones);
   const addZone = useMachineStore((state) => state.addZone);
   const deleteZone = useMachineStore((state) => state.deleteZone);
   const renameZone = useMachineStore((state) => state.renameZone);
   const reorderZone = useMachineStore((state) => state.reorderZone);
   const addMachineToZone = useMachineStore((state) => state.addMachineToZone);
+  const init = useMachineStore((state) => state.init);
+  const loadInitialData = useMachineStore((state) => state.loadInitialData);
+
+  // Инициализация при загрузке
+  useEffect(() => {
+    if (USE_API && isAuthenticated) {
+      init();
+    } else if (!USE_API) {
+      loadInitialData();
+    }
+  }, [isAuthenticated]);
+
+  // Проверка авторизации при загрузке
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token && USE_API) {
+      // Валидация токена
+      fetch('http://localhost:8000/api/auth/me', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      }).then(res => {
+        if (res.ok) return res.json();
+        throw new Error('Invalid token');
+      }).then(user => {
+        useAuthStore.getState().setUser(user);
+      }).catch(() => {
+        localStorage.removeItem('token');
+      });
+    }
+  }, []);
 
   const handleAddZone = () => {
     if (!newZoneName.trim()) {
@@ -29,26 +65,29 @@ function App() {
     setShowAddZone(false);
   };
 
-  // Функция перемещения зоны вверх
-  const handleMoveUp = (index) => {
-    if (index > 0) {
-      const zone = sortedZones[index];
-      const targetOrder = sortedZones[index - 1].order;
-      reorderZone(zone.id, targetOrder);
+  const handleMoveZone = (zoneId, targetIndex) => {
+    reorderZone(zoneId, targetIndex);
+  };
+
+  const handleAuthSuccess = (user) => {
+    console.log('Welcome:', user);
+    if (USE_API) {
+      init();
     }
   };
 
-  // Функция перемещения зоны вниз
-  const handleMoveDown = (index) => {
-    if (index < sortedZones.length - 1) {
-      const zone = sortedZones[index];
-      const targetOrder = sortedZones[index + 1].order;
-      reorderZone(zone.id, targetOrder);
-    }
-  };
+  const sortedZones = [...zones].sort((a, b) => b.order - a.order);
 
-  // Сортируем зоны по order (чем меньше order, тем выше)
-  const sortedZones = [...zones].sort((a, b) => a.order - b.order);
+  // Если нужна авторизация и пользователь не авторизован - показываем окно входа
+  if (USE_API && !isAuthenticated) {
+    return (
+      <AuthModal 
+        isOpen={true}
+        onClose={() => {}}
+        onSuccess={handleAuthSuccess}
+      />
+    );
+  }
 
   return (
     <DndProvider backend={HTML5Backend}>
@@ -60,6 +99,11 @@ function App() {
               <h1>Мониторинг станков</h1>
             </div>
             <div className="header-actions">
+              {USE_API && user && (
+                <span style={{ fontSize: '13px', color: '#64748b' }}>
+                  👤 {user.username}
+                </span>
+              )}
               <button 
                 className="settings-btn"
                 onClick={() => setShowSettings(true)}
@@ -73,6 +117,22 @@ function App() {
               >
                 + Добавить участок
               </button>
+              {USE_API && (
+                <button 
+                  onClick={logout}
+                  style={{
+                    background: '#f1f5f9',
+                    border: '1px solid #e2e8f0',
+                    padding: '8px 12px',
+                    borderRadius: '10px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    color: '#475569'
+                  }}
+                >
+                  🚪 Выйти
+                </button>
+              )}
             </div>
           </div>
         </header>
@@ -88,8 +148,7 @@ function App() {
                 onRename={renameZone}
                 onDelete={deleteZone}
                 onAddMachine={addMachineToZone}
-                onMoveUp={handleMoveUp}
-                onMoveDown={handleMoveDown}
+                onMoveZone={handleMoveZone}
                 cellWidth={cellWidth}
               />
             ))}
@@ -126,7 +185,6 @@ function App() {
           </div>
         </main>
         
-        {/* Модальное окно добавления зоны */}
         {showAddZone && (
           <div className="modal-overlay" onClick={() => setShowAddZone(false)}>
             <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -157,7 +215,6 @@ function App() {
           </div>
         )}
         
-        {/* Модальное окно настроек размера ячеек */}
         <SettingsModal 
           isOpen={showSettings} 
           onClose={() => setShowSettings(false)}

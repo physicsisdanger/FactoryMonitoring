@@ -1,312 +1,354 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { USE_API } from '../config';
+import { zonesApi, machinesApi, connectWebSocket, disconnectWebSocket, sendWSMessage } from '../services/api';
 
 const useMachineStore = create(
-  persist(
-    (set, get) => ({
-      zones: [
-        {
-          id: 'zone-1',
-          name: 'Механический участок',
-          order: 0,
-          machines: [
-            {
-              id: '1',
-              name: 'Фрезерный станок CNC-01',
-              status: 'running',
-              temperature: 45,
-              position: { x: 0, y: 0, w: 1, h: 1 },
-              photos: [],
-              history: [
-                {
-                  id: 'hist-1',
-                  date: new Date().toISOString(),
-                  oldStatus: 'ready',
-                  newStatus: 'running',
-                  comment: 'Запущен в работу',
-                  user: 'Оператор',
-                  photos: [],
-                  comments: []
-                }
-              ]
-            },
-            {
-              id: '2',
-              name: 'Токарный станок T-200',
-              status: 'ready',
-              temperature: 28,
-              position: { x: 1, y: 0, w: 1, h: 1 },
-              photos: [],
-              history: []
-            }
-          ]
-        },
-        {
-          id: 'zone-2',
-          name: 'Сборочный участок',
-          order: 1,
-          machines: [
-            {
-              id: '3',
-              name: 'Сверлильный станок Drill-300',
-              status: 'waiting_qc',
-              temperature: 22,
-              position: { x: 0, y: 0, w: 1, h: 1 },
-              photos: [],
-              history: []
-            },
-            {
-              id: '4',
-              name: 'Шлифовальный станок Grind-500',
-              status: 'need_check',
-              temperature: 35,
-              position: { x: 1, y: 0, w: 1, h: 1 },
-              photos: [],
-              history: []
-            }
-          ]
-        }
-      ],
+  (set, get) => ({
+    zones: [],
+    loading: false,
+    error: null,
+    
+    // Инициализация - загрузка данных
+    init: async () => {
+      if (!USE_API) return;
       
-      addZone: (name) => set((state) => {
-        const maxOrder = Math.max(...state.zones.map(z => z.order), -1);
-        return {
-          zones: [...state.zones, {
+      set({ loading: true });
+      try {
+        const zones = await zonesApi.getAll();
+        set({ zones, loading: false });
+      } catch (error) {
+        console.error('Failed to load zones:', error);
+        set({ error: error.message, loading: false });
+      }
+    },
+    
+    // Добавить зону
+    addZone: async (name) => {
+      if (USE_API) {
+        try {
+          const newZone = await zonesApi.create({ name, order: 0 });
+          set((state) => ({ zones: [...state.zones, newZone] }));
+          sendWSMessage({ type: 'zone_created', data: newZone });
+        } catch (error) {
+          console.error('Failed to create zone:', error);
+        }
+      } else {
+        // localStorage режим
+        set((state) => {
+          const maxOrder = Math.max(...state.zones.map(z => z.order), -1);
+          const newZone = {
             id: Date.now().toString(),
             name: name,
             order: maxOrder + 1,
             machines: []
-          }]
-        };
-      }),
-      
-      deleteZone: (zoneId) => set((state) => ({
-        zones: state.zones.filter(z => z.id !== zoneId)
-      })),
-      
-      renameZone: (zoneId, newName) => set((state) => ({
-        zones: state.zones.map(z => 
-          z.id === zoneId ? { ...z, name: newName } : z
-        )
-      })),
-      
-      reorderZone: (zoneId, targetOrder) => set((state) => {
-        const zones = [...state.zones];
-        const sourceIndex = zones.findIndex(z => z.id === zoneId);
-        const targetIndex = zones.findIndex(z => z.order === targetOrder);
-        
-        if (sourceIndex === -1 || targetIndex === -1) return state;
-        
-        const [movedZone] = zones.splice(sourceIndex, 1);
-        zones.splice(targetIndex, 0, movedZone);
-        
-        const updatedZones = zones.map((zone, idx) => ({
-          ...zone,
-          order: idx
+          };
+          return { zones: [...state.zones, newZone] };
+        });
+      }
+    },
+    
+    // Удалить зону
+    deleteZone: async (zoneId) => {
+      if (USE_API) {
+        try {
+          await zonesApi.delete(zoneId);
+          set((state) => ({ zones: state.zones.filter(z => z.id !== zoneId) }));
+          sendWSMessage({ type: 'zone_deleted', data: { id: zoneId } });
+        } catch (error) {
+          console.error('Failed to delete zone:', error);
+        }
+      } else {
+        set((state) => ({ zones: state.zones.filter(z => z.id !== zoneId) }));
+      }
+    },
+    
+    // Переименовать зону
+    renameZone: async (zoneId, newName) => {
+      if (USE_API) {
+        try {
+          await zonesApi.update(zoneId, { name: newName });
+          set((state) => ({
+            zones: state.zones.map(z => z.id === zoneId ? { ...z, name: newName } : z)
+          }));
+          sendWSMessage({ type: 'zone_updated', data: { id: zoneId, name: newName } });
+        } catch (error) {
+          console.error('Failed to rename zone:', error);
+        }
+      } else {
+        set((state) => ({
+          zones: state.zones.map(z => z.id === zoneId ? { ...z, name: newName } : z)
         }));
-        
-        return { zones: updatedZones };
-      }),
-      
-      addMachineToZone: (zoneId, machineName) => set((state) => {
-        const zone = state.zones.find(z => z.id === zoneId);
-        if (!zone) return state;
-        
-        let newX = 0;
-        let newY = 0;
-        let found = false;
-        
-        for (let y = 0; y < 50 && !found; y++) {
-          for (let x = 0; x < 20 && !found; x++) {
-            const occupied = zone.machines.some(m => m.position.x === x && m.position.y === y);
-            if (!occupied) {
-              newX = x;
-              newY = y;
-              found = true;
+      }
+    },
+    
+    // Добавить станок в зону
+    addMachineToZone: async (zoneId, machineName) => {
+      if (USE_API) {
+        try {
+          const newMachine = await machinesApi.create(zoneId, {
+            name: machineName,
+            status: 'ready',
+            temperature: 20,
+            position_x: 0,
+            position_y: 0,
+            position_w: 1,
+            position_h: 1
+          });
+          set((state) => ({
+            zones: state.zones.map(z =>
+              z.id === zoneId 
+                ? { ...z, machines: [...(z.machines || []), newMachine] }
+                : z
+            )
+          }));
+          sendWSMessage({ type: 'machine_created', data: newMachine });
+        } catch (error) {
+          console.error('Failed to create machine:', error);
+        }
+      } else {
+        // localStorage режим
+        set((state) => {
+          const zone = state.zones.find(z => z.id === zoneId);
+          if (!zone) return state;
+          
+          let newX = 0;
+          let newY = 0;
+          let found = false;
+          
+          for (let y = 0; y < 50 && !found; y++) {
+            for (let x = 0; x < 20 && !found; x++) {
+              const occupied = (zone.machines || []).some(m => m.position.x === x && m.position.y === y);
+              if (!occupied) {
+                newX = x;
+                newY = y;
+                found = true;
+              }
             }
           }
-        }
-        
-        const newMachine = {
-          id: Date.now().toString(),
-          name: machineName,
-          status: 'ready',
-          temperature: 20,
-          position: { x: newX, y: newY, w: 1, h: 1 },
-          photos: [],
-          history: [{
+          
+          const newMachine = {
             id: Date.now().toString(),
-            date: new Date().toISOString(),
-            oldStatus: null,
-            newStatus: 'ready',
-            comment: 'Станок добавлен',
-            user: 'Система',
+            name: machineName,
+            status: 'ready',
+            temperature: 20,
+            position: { x: newX, y: newY, w: 1, h: 1 },
             photos: [],
-            comments: []
-          }]
-        };
-        
-        return {
+            history: []
+          };
+          
+          return {
+            zones: state.zones.map(z =>
+              z.id === zoneId 
+                ? { ...z, machines: [...(z.machines || []), newMachine] }
+                : z
+            )
+          };
+        });
+      }
+    },
+    
+    // Обновить статус станка
+    updateMachineStatus: async (zoneId, machineId, status, comment, photos) => {
+      if (USE_API) {
+        try {
+          await machinesApi.changeStatus(machineId, status, comment, photos);
+          set((state) => ({
+            zones: state.zones.map(z =>
+              z.id === zoneId 
+                ? { ...z, machines: (z.machines || []).map(m =>
+                    m.id === machineId ? { ...m, status: status } : m
+                  ) }
+                : z
+            )
+          }));
+        } catch (error) {
+          console.error('Failed to update status:', error);
+        }
+      } else {
+        // localStorage режим (существующая логика)
+        set((state) => ({
           zones: state.zones.map(z =>
             z.id === zoneId 
-              ? { ...z, machines: [...z.machines, newMachine] }
+              ? { ...z, machines: (z.machines || []).map(m =>
+                  m.id === machineId 
+                    ? { 
+                        ...m, 
+                        status: status,
+                        history: [{
+                          id: Date.now().toString(),
+                          date: new Date().toISOString(),
+                          oldStatus: m.status,
+                          newStatus: status,
+                          comment: comment,
+                          user: 'Оператор',
+                          photos: photos || []
+                        }, ...(m.history || [])]
+                      } 
+                    : m
+                ) }
               : z
           )
-        };
-      }),
-      
-      deleteMachineFromZone: (zoneId, machineId) => set((state) => ({
+        }));
+      }
+    },
+    
+    // Удалить станок
+    deleteMachineFromZone: async (zoneId, machineId) => {
+      if (USE_API) {
+        try {
+          await machinesApi.delete(machineId);
+          set((state) => ({
+            zones: state.zones.map(z =>
+              z.id === zoneId 
+                ? { ...z, machines: (z.machines || []).filter(m => m.id !== machineId) }
+                : z
+            )
+          }));
+        } catch (error) {
+          console.error('Failed to delete machine:', error);
+        }
+      } else {
+        set((state) => ({
+          zones: state.zones.map(z =>
+            z.id === zoneId 
+              ? { ...z, machines: (z.machines || []).filter(m => m.id !== machineId) }
+              : z
+          )
+        }));
+      }
+    },
+    
+    // Переместить станок в зоне
+    moveMachineInZone: async (zoneId, machineId, newX, newY) => {
+      if (USE_API) {
+        try {
+          await machinesApi.update(machineId, {
+            position_x: newX,
+            position_y: newY
+          });
+          set((state) => ({
+            zones: state.zones.map(z =>
+              z.id === zoneId 
+                ? { ...z, machines: (z.machines || []).map(m =>
+                    m.id === machineId 
+                      ? { ...m, position: { x: newX, y: newY, w: m.position.w, h: m.position.h } }
+                      : m
+                  ) }
+                : z
+            )
+          }));
+        } catch (error) {
+          console.error('Failed to move machine:', error);
+        }
+      } else {
+        set((state) => ({
+          zones: state.zones.map(z =>
+            z.id === zoneId 
+              ? { ...z, machines: (z.machines || []).map(m =>
+                  m.id === machineId 
+                    ? { ...m, position: { x: newX, y: newY, w: m.position.w, h: m.position.h } }
+                    : m
+                ) }
+              : z
+          )
+        }));
+      }
+    },
+    
+    // Очистить историю станка
+    clearMachineHistory: async (zoneId, machineId) => {
+      // API метод нужно добавить на бэкенде
+      set((state) => ({
         zones: state.zones.map(z =>
           z.id === zoneId 
-            ? { ...z, machines: z.machines.filter(m => m.id !== machineId) }
-            : z
-        )
-      })),
-      
-      renameMachine: (zoneId, machineId, newName) => set((state) => ({
-        zones: state.zones.map(z =>
-          z.id === zoneId 
-            ? { ...z, machines: z.machines.map(m =>
-                m.id === machineId 
-                  ? { ...m, name: newName }
-                  : m
-              ) }
-            : z
-        )
-      })),
-      
-      clearMachineHistory: (zoneId, machineId) => set((state) => ({
-        zones: state.zones.map(z =>
-          z.id === zoneId 
-            ? { ...z, machines: z.machines.map(m =>
+            ? { ...z, machines: (z.machines || []).map(m =>
                 m.id === machineId 
                   ? { ...m, history: [] }
                   : m
               ) }
             : z
         )
-      })),
-      
-      addPhotoToMachine: (zoneId, machineId, photoData) => set((state) => ({
-        zones: state.zones.map(z =>
-          z.id === zoneId 
-            ? { ...z, machines: z.machines.map(m =>
-                m.id === machineId 
-                  ? { ...m, photos: [...(m.photos || []), photoData] }
-                  : m
-              ) }
-            : z
-        )
-      })),
-      
-      updateMachineStatus: (zoneId, machineId, status, comment = '', photos = []) => set((state) => {
-        const zone = state.zones.find(z => z.id === zoneId);
-        if (!zone) return state;
-        
-        const machine = zone.machines.find(m => m.id === machineId);
-        if (!machine) return state;
-        
-        const oldStatus = machine.status;
-        
-        const historyEntry = {
-          id: Date.now().toString(),
-          date: new Date().toISOString(),
-          oldStatus: oldStatus,
-          newStatus: status,
-          comment: comment || `Изменение статуса`,
-          user: 'Оператор',
-          photos: photos,
-          comments: []
-        };
-        
-        return {
+      }));
+    },
+    
+    // Переименовать станок
+    renameMachine: async (zoneId, machineId, newName) => {
+      if (USE_API) {
+        try {
+          await machinesApi.update(machineId, { name: newName });
+          set((state) => ({
+            zones: state.zones.map(z =>
+              z.id === zoneId 
+                ? { ...z, machines: (z.machines || []).map(m =>
+                    m.id === machineId ? { ...m, name: newName } : m
+                  ) }
+                : z
+            )
+          }));
+        } catch (error) {
+          console.error('Failed to rename machine:', error);
+        }
+      } else {
+        set((state) => ({
           zones: state.zones.map(z =>
             z.id === zoneId 
-              ? { ...z, machines: z.machines.map(m =>
-                  m.id === machineId 
-                    ? { 
-                        ...m, 
-                        status: status,
-                        history: [historyEntry, ...(m.history || [])]
-                      } 
-                    : m
+              ? { ...z, machines: (z.machines || []).map(m =>
+                  m.id === machineId ? { ...m, name: newName } : m
                 ) }
               : z
           )
-        };
-      }),
-      
-      addCommentToHistoryEntry: (zoneId, machineId, historyId, comment, photos) => set((state) => {
-        const zone = state.zones.find(z => z.id === zoneId);
-        if (!zone) return state;
-        
-        const machine = zone.machines.find(m => m.id === machineId);
-        if (!machine) return state;
-        
-        const historyEntry = machine.history.find(h => h.id === historyId);
-        if (!historyEntry) return state;
-        
-        const newComment = {
-          id: Date.now().toString(),
-          date: new Date().toISOString(),
-          text: comment,
-          photos: photos || [],
-          user: 'Оператор'
-        };
-        
-        return {
-          zones: state.zones.map(z =>
-            z.id === zoneId 
-              ? { ...z, machines: z.machines.map(m =>
-                  m.id === machineId 
-                    ? { 
-                        ...m, 
-                        history: m.history.map(h =>
-                          h.id === historyId 
-                            ? { 
-                                ...h, 
-                                comments: [...(h.comments || []), newComment]
-                              } 
-                            : h
-                        )
-                      } 
-                    : m
-                ) }
-              : z
-          )
-        };
-      }),
-      
-      moveMachineInZone: (zoneId, machineId, newX, newY) => set((state) => {
-        const zone = state.zones.find(z => z.id === zoneId);
-        if (!zone) return state;
-        
-        const machine = zone.machines.find(m => m.id === machineId);
-        if (!machine) return state;
-        
-        const isOccupied = zone.machines.some(m => 
-          m.id !== machineId && m.position.x === newX && m.position.y === newY
-        );
-        
-        if (isOccupied) return state;
-        
-        return {
-          zones: state.zones.map(z =>
-            z.id === zoneId 
-              ? { ...z, machines: z.machines.map(m =>
-                  m.id === machineId 
-                    ? { ...m, position: { x: newX, y: newY, w: 1, h: 1 } }
-                    : m
-                ) }
-              : z
-          )
-        };
-      })
-    }),
-    {
-      name: 'factory-storage',
+        }));
+      }
+    },
+    
+    // Подключить WebSocket
+    connectWebSocket: (userId, onMessage) => {
+      if (USE_API) {
+        connectWebSocket(userId, (data) => {
+          // Обработка входящих сообщений
+          switch (data.type) {
+            case 'zone_created':
+            case 'zone_updated':
+            case 'zone_deleted':
+            case 'machine_created':
+            case 'machine_updated':
+            case 'machine_deleted':
+            case 'status_changed':
+              // Обновляем данные
+              get().init();
+              break;
+            default:
+              if (onMessage) onMessage(data);
+          }
+        });
+      }
+    },
+    
+    // Отключить WebSocket
+    disconnectWebSocket: () => {
+      if (USE_API) {
+        disconnectWebSocket();
+      }
+    },
+    
+    // Загрузить начальные данные (для localStorage режима)
+    loadInitialData: () => {
+      if (!USE_API) {
+        const saved = localStorage.getItem('factory-storage');
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            if (parsed.state && parsed.state.zones) {
+              set({ zones: parsed.state.zones });
+            }
+          } catch (e) {
+            console.error('Failed to load saved data:', e);
+          }
+        }
+      }
     }
-  )
+  })
 );
 
 export default useMachineStore;
